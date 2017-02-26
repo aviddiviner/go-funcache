@@ -7,7 +7,7 @@ import (
 
 type Store interface {
 	Add(key, value interface{})
-	Get(key interface{}) (interface{}, bool)
+	Get(key interface{}) (value interface{}, ok bool)
 
 	// Contains(key interface{}) bool
 	// Peek(key interface{}) (interface{}, bool)
@@ -69,7 +69,7 @@ func NewInMemCache() *Cache { return New(newSyncMap()) }
 
 func (cache *Cache) Bust(fn func()) { fn() }
 
-func (cache *Cache) Wrap(key string, fn func() interface{}) interface{} {
+func (cache *Cache) Wrap(key interface{}, fn func() interface{}) interface{} {
 	if !wasCalledBy(cacheBustingFn) {
 		if data, ok := cache.store.Get(key); ok {
 			return data

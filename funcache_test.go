@@ -40,12 +40,12 @@ func TestBasics(t *testing.T) {
 	})
 }
 
-func testCacheUse(t *testing.T, cache *Cache, key, val string, bust bool) {
+func testCacheUse(t *testing.T, cache *Cache, key, val interface{}, bust bool) {
 	var gotBust bool
 	gotVal := cache.Wrap(key, func() interface{} {
 		gotBust = true
 		return val
-	}).(string)
+	})
 	assert.Equal(t, val, gotVal)
 	assert.Equal(t, bust, gotBust)
 }
@@ -67,4 +67,11 @@ func TestBackedByAnotherStore(t *testing.T) {
 
 	testCacheUse(t, cache, "foo", "Foo!", false)
 	testCacheUse(t, cache, "bar", "Bar!", false)
+}
+
+func TestCacheNil(t *testing.T) {
+	cache := NewInMemCache()
+
+	testCacheUse(t, cache, nil, "Foo!", true)
+	testCacheUse(t, cache, nil, "Foo!", false)
 }
