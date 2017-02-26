@@ -1,17 +1,44 @@
 package funcache
 
 import (
+	"runtime"
 	"testing"
 
 	"github.com/hashicorp/golang-lru"
 	"github.com/stretchr/testify/assert"
 )
 
+func testGetCallingFuncs() (funcNames []string) {
+	// Skip the first 3 callers:
+	// 1. runtime.Callers
+	// 2. github.com/aviddiviner/funcache.getAllCallers
+	// 3. testGetCallingFuncs (this)
+	pcs := getAllCallers(3)
+	frames := runtime.CallersFrames(pcs)
+	for {
+		frame, more := frames.Next()
+		funcNames = append(funcNames, frame.Function)
+		if !more {
+			break
+		}
+	}
+	return
+}
+
 func TestCaller(t *testing.T) {
-	assert.True(t, wasCalledBy("github.com/aviddiviner/funcache.TestCaller"))
-	func() {
-		assert.True(t, wasCalledBy("github.com/aviddiviner/funcache.TestCaller"))
-	}()
+	fns := testGetCallingFuncs()
+	var found bool
+	for _, fn := range fns {
+		if fn == "github.com/aviddiviner/funcache.TestCaller" {
+			found = true
+		}
+	}
+	assert.True(t, found)
+
+	cache := nilCache()
+	cache.Bust(func() {
+		assert.True(t, wasCalledByCacheBustingFn())
+	})
 }
 
 func TestBasics(t *testing.T) {
@@ -48,6 +75,20 @@ func testCacheUse(t *testing.T, cache *Cache, key, val interface{}, bust bool) {
 	})
 	assert.Equal(t, val, gotVal)
 	assert.Equal(t, bust, gotBust)
+}
+
+func TestDeeplyNestedCacheBusting(t *testing.T) {
+	cache := NewInMemCache()
+
+	testCacheUse(t, cache, "foo", "Foo!", true)
+	testCacheUse(t, cache, "foo", "Foo!", false)
+
+	cache.Bust(func() {
+		testCacheUse(t, cache, "foo", "Foo!", true)
+		func() {
+			testCacheUse(t, cache, "foo", "Foo!", true)
+		}()
+	})
 }
 
 func TestBackedByAnotherStore(t *testing.T) {

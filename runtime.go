@@ -4,6 +4,10 @@ import (
 	"runtime"
 )
 
+const cacheBustingFn = "github.com/aviddiviner/funcache.(*Cache).Bust"
+
+var cacheBustingFnPc uintptr
+
 // Return the program counters of function invocations all the way up the stack.
 func getAllCallers(skip int) (pcs []uintptr) {
 	// Arbitrarily do this in batches of 64
@@ -20,23 +24,33 @@ func getAllCallers(skip int) (pcs []uintptr) {
 	return
 }
 
-// Check if any of the calling stack frames were our
-func wasCalledBy(funcName string) bool {
+// Check if any of the callers were our cache busting function.
+func wasCalledByCacheBustingFn() bool {
 	// Skip the first 3 callers:
 	// 1. runtime.Callers
-	// 2. main.getAllCallers
-	// 3. main.wasCalledBy
+	// 2. github.com/aviddiviner/funcache.getAllCallers
+	// 3. github.com/aviddiviner/funcache.wasCalledByCacheBustingFn
+	//
+	// From there on it should be:
+	// 4. github.com/aviddiviner/funcache.(*Cache).Wrap
+	// ...
 	pcs := getAllCallers(3)
-	frames := runtime.CallersFrames(pcs)
-	for {
-		frame, more := frames.Next()
-		// println(frame.Function)
-		if frame.Function == funcName {
+	for _, pc := range pcs {
+		if pc == cacheBustingFnPc {
 			return true
-		}
-		if !more {
-			break
 		}
 	}
 	return false
+}
+
+func init() {
+	nilCache().Bust(func() {
+		cacheBustingFnPc, _, _, _ = runtime.Caller(1)
+	})
+	// Sanity check that we have the right cache busting function
+	frames := runtime.CallersFrames([]uintptr{cacheBustingFnPc})
+	frame, _ := frames.Next()
+	if frame.Function != cacheBustingFn {
+		panic("funcache: init: unable to identify cache busting func")
+	}
 }

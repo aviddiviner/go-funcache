@@ -16,6 +16,17 @@ type Store interface {
 }
 
 // -----------------------------------------------------------------------------
+// Dummy store, used for testing and init().
+
+type nilStore struct{}
+
+func (*nilStore) Add(key, value interface{})                       { return }
+func (*nilStore) Get(key interface{}) (value interface{}, ok bool) { return }
+
+func nilCache() *Cache { return New(&nilStore{}) }
+
+// -----------------------------------------------------------------------------
+// Simple in-memory map, safe for concurrent access.
 
 type syncMap struct {
 	sync.RWMutex
@@ -57,8 +68,6 @@ func (sm *syncMap) Get(key interface{}) (value interface{}, ok bool) {
 
 // -----------------------------------------------------------------------------
 
-const cacheBustingFn = "github.com/aviddiviner/funcache.(*Cache).Bust"
-
 type Cache struct{ store Store }
 
 func New(store Store) *Cache { return &Cache{store} }
@@ -70,7 +79,7 @@ func NewInMemCache() *Cache { return New(newSyncMap()) }
 func (cache *Cache) Bust(fn func()) { fn() }
 
 func (cache *Cache) Wrap(key interface{}, fn func() interface{}) interface{} {
-	if !wasCalledBy(cacheBustingFn) {
+	if !wasCalledByCacheBustingFn() {
 		if data, ok := cache.store.Get(key); ok {
 			return data
 		}
