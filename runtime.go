@@ -33,7 +33,8 @@ func wasCalledByCacheBustingFn() bool {
 	// 3. github.com/aviddiviner/funcache.wasCalledByCacheBustingFn
 	//
 	// From there on it should be:
-	// 4. github.com/aviddiviner/funcache.(*Cache).Wrap
+	// 4. github.com/aviddiviner/funcache.(*Cache).Cache
+	// 5. github.com/aviddiviner/funcache.(*Cache).Wrap  (probably)
 	// ...
 	pcs := getAllCallers(3)
 	for _, pc := range pcs {

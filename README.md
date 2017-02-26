@@ -34,7 +34,7 @@ cache.Bust(func() {
 
 The simplicity of this API means you don't need to track if some deeply nested values have been cached. Also, you don't need to keep track of keys for cached objects, to invalidate them. Just wrap your call in a `cache.Bust()` and you can be sure no cached values will be used. This makes fragment caching (Russian doll caching) simple and painless.
 
-You can also use other backing stores (other than the simple in-memory one), such as [LRU cache](https://github.com/hashicorp/golang-lru). As long as it implements the `Store` interface, it can be used.
+You can also use other backing stores (other than the simple in-memory one), such as [LRU cache](https://github.com/hashicorp/golang-lru). As long as it implements the `funcache.Store` interface, it can be used.
 
 ```go
 import "github.com/hashicorp/golang-lru"
