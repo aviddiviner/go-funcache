@@ -3,10 +3,33 @@ package funcache
 import (
 	"runtime"
 	"testing"
+	"time"
 
 	"github.com/hashicorp/golang-lru"
 	"github.com/stretchr/testify/assert"
 )
+
+type noisyTestStore struct {
+	t *testing.T
+	m map[string]interface{}
+}
+
+func noisyTestCache(t *testing.T) *Cache {
+	return New(&noisyTestStore{t: t, m: make(map[string]interface{})})
+}
+
+func (ts *noisyTestStore) Add(key, value interface{}) {
+	ts.m[keyFromInterface(key)] = value
+	ts.t.Logf("Add(%v, %v)", key, value)
+}
+
+func (ts *noisyTestStore) Get(key interface{}) (value interface{}, ok bool) {
+	value, ok = ts.m[keyFromInterface(key)]
+	ts.t.Logf("Get(%v) -> (%v, %v)", key, value, ok)
+	return
+}
+
+// -----------------------------------------------------------------------------
 
 func testGetCallingFuncs() (funcNames []string) {
 	// Skip the first 3 callers:
@@ -70,7 +93,7 @@ func TestWrapIsDistinct(t *testing.T) {
 }
 
 func TestBasics(t *testing.T) {
-	cache := NewInMemCache()
+	cache := noisyTestCache(t)
 
 	var callCount int
 	getFoo := func() string {
@@ -95,6 +118,33 @@ func TestBasics(t *testing.T) {
 	})
 }
 
+func withTestTimeout(t *testing.T, millis int, fn func()) {
+	done := make(chan bool)
+	go func() {
+		fn()
+		done <- true
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Duration(millis) * time.Millisecond):
+		t.Fatal("timed out")
+	}
+}
+
+func TestFibonacci(t *testing.T) {
+	cache := noisyTestCache(t)
+	var fib func(k int) int
+	fib = func(k int) int {
+		if k < 2 {
+			return k
+		}
+		a := cache.Cache(k-1, func() interface{} { return fib(k - 1) })
+		b := cache.Cache(k-2, func() interface{} { return fib(k - 2) })
+		return a.(int) + b.(int)
+	}
+	withTestTimeout(t, 500, func() { fib(36) }) // Retardedly slow without caching
+}
+
 func testCacheUse(t *testing.T, cache *Cache, key, val interface{}, bust bool) {
 	var gotBust bool
 	gotVal := cache.Cache(key, func() interface{} {
@@ -105,16 +155,41 @@ func testCacheUse(t *testing.T, cache *Cache, key, val interface{}, bust bool) {
 	assert.Equal(t, bust, gotBust)
 }
 
-func TestDeeplyNestedCacheBusting(t *testing.T) {
+func TestNestedCachingAndBusting(t *testing.T) {
 	cache := NewInMemCache()
 
-	testCacheUse(t, cache, "foo", "Foo!", true)
-	testCacheUse(t, cache, "foo", "Foo!", false)
+	var callCount int
+	getFoo := func() interface{} {
+		return cache.Wrap(func() interface{} {
+			callCount += 1
+			return "Foo!"
+		})
+	}
+	getBar := func() interface{} {
+		return cache.Wrap(func() interface{} {
+			getFoo()
+			getFoo()
+			callCount += 1
+			return "Bar!"
+		})
+	}
+
+	assert.Equal(t, "Foo!", getFoo())
+	assert.Equal(t, 1, callCount)
+
+	assert.Equal(t, "Bar!", getBar())
+	assert.Equal(t, 2, callCount)
 
 	cache.Bust(func() {
-		testCacheUse(t, cache, "foo", "Foo!", true)
+		assert.Equal(t, "Foo!", getFoo())
+		assert.Equal(t, 3, callCount)
+
+		assert.Equal(t, "Bar!", getBar())
+		assert.Equal(t, 6, callCount)
+
 		func() {
-			testCacheUse(t, cache, "foo", "Foo!", true)
+			assert.Equal(t, "Bar!", getBar())
+			assert.Equal(t, 9, callCount)
 		}()
 	})
 }
