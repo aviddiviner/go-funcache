@@ -132,7 +132,7 @@ func withTestTimeout(t *testing.T, millis int, fn func()) {
 }
 
 func TestFibonacci(t *testing.T) {
-	cache := noisyTestCache(t)
+	cache := NewInMemCache()
 	var fib func(k int) int
 	fib = func(k int) int {
 		if k < 2 {
@@ -191,7 +191,15 @@ func TestNestedCachingAndBusting(t *testing.T) {
 			assert.Equal(t, "Bar!", getBar())
 			assert.Equal(t, 9, callCount)
 		}()
+
+		cache.Bust(func() {
+			assert.Equal(t, "Bar!", getBar())
+			assert.Equal(t, 12, callCount)
+		})
 	})
+
+	assert.Equal(t, "Bar!", getBar())
+	assert.Equal(t, 12, callCount)
 }
 
 func TestBackedByAnotherStore(t *testing.T) {
@@ -218,4 +226,84 @@ func TestCacheNil(t *testing.T) {
 
 	testCacheUse(t, cache, nil, "Foo!", true)
 	testCacheUse(t, cache, nil, "Foo!", false)
+}
+
+func TestDeferredFuncs(t *testing.T) {
+	cache := NewInMemCache()
+
+	testCacheUse(t, cache, "foo", "Foo!", true)
+	defer testCacheUse(t, cache, "foo", "Foo!", false)
+	defer cache.Bust(func() {
+		testCacheUse(t, cache, "foo", "Foo!", true)
+	})
+}
+
+// -----------------------------------------------------------------------------
+
+func BenchmarkUncached(b *testing.B) {
+	for n := 0; n < b.N; n++ {
+		func() interface{} {
+			return "xyz"
+		}()
+	}
+}
+
+func BenchmarkCacheHits(b *testing.B) {
+	cache := NewInMemCache()
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		cache.Cache("xyz", func() interface{} {
+			return "xyz"
+		})
+	}
+}
+func BenchmarkCacheMisses(b *testing.B) {
+	cache := nilCache()
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		cache.Cache("xyz", func() interface{} {
+			return "xyz"
+		})
+	}
+}
+func BenchmarkCacheBusted(b *testing.B) {
+	cache := nilCache()
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		cache.Bust(func() {
+			cache.Cache("xyz", func() interface{} {
+				return "xyz"
+			})
+		})
+	}
+}
+
+func BenchmarkWrapHits(b *testing.B) {
+	cache := NewInMemCache()
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		cache.Wrap(func() interface{} {
+			return "xyz"
+		})
+	}
+}
+func BenchmarkWrapMisses(b *testing.B) {
+	cache := nilCache()
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		cache.Wrap(func() interface{} {
+			return "xyz"
+		})
+	}
+}
+func BenchmarkWrapBusted(b *testing.B) {
+	cache := nilCache()
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		cache.Bust(func() {
+			cache.Wrap(func() interface{} {
+				return "xyz"
+			})
+		})
+	}
 }

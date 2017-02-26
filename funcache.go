@@ -4,6 +4,7 @@ package funcache
 import (
 	"fmt"
 	"sync"
+	"sync/atomic"
 )
 
 // Store is any backing store used by the cache. Note that the cache doesn't do
@@ -60,10 +61,16 @@ func (sm *syncMap) Get(key interface{}) (value interface{}, ok bool) {
 
 // -----------------------------------------------------------------------------
 
-type Cache struct{ store Store }
+type Cache struct {
+	store Store
+	// Small optimization: maintain a counter of actively cache busting callers.
+	// If no one is cache busting, then don't go through the extra effort of
+	// checking the caller stack.
+	busting uint32
+}
 
 // New returns a Cache backed by the store you provide.
-func New(store Store) *Cache { return &Cache{store} }
+func New(store Store) *Cache { return &Cache{store: store} }
 
 // NewInMemCache returns a Cache backed by a simple in-memory map, safe for
 // concurrent access.
@@ -71,14 +78,18 @@ func NewInMemCache() *Cache { return New(newSyncMap()) }
 
 // Bust calls the given function, invalidating any cached values in nested
 // function calls.
-func (cache *Cache) Bust(fn func()) { fn() }
+func (cache *Cache) Bust(fn func()) {
+	atomic.AddUint32(&cache.busting, 1)                // Increment
+	defer atomic.AddUint32(&cache.busting, ^uint32(0)) // Decrement
+	fn()
+}
 
 // Cache takes a function and caches its return value. It saves it in the store
 // under the given key. Subsequent calls to Cache, with the same key, will return
 // the cached value (if it still exists in the store), otherwise the function
 // will be called again.
 func (cache *Cache) Cache(key interface{}, fn func() interface{}) interface{} {
-	if !wasCalledByCacheBustingFn() {
+	if atomic.LoadUint32(&cache.busting) == 0 || !wasCalledByCacheBustingFn() {
 		if data, ok := cache.store.Get(key); ok {
 			return data
 		}
