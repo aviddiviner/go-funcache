@@ -1,3 +1,4 @@
+// Package funcache provides simple, fine-grained caching of function values.
 package funcache
 
 import (
