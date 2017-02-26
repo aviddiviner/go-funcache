@@ -78,7 +78,7 @@ func NewInMemCache() *Cache { return New(newSyncMap()) }
 
 func (cache *Cache) Bust(fn func()) { fn() }
 
-func (cache *Cache) Wrap(key interface{}, fn func() interface{}) interface{} {
+func (cache *Cache) Cache(key interface{}, fn func() interface{}) interface{} {
 	if !wasCalledByCacheBustingFn() {
 		if data, ok := cache.store.Get(key); ok {
 			return data
@@ -87,4 +87,8 @@ func (cache *Cache) Wrap(key interface{}, fn func() interface{}) interface{} {
 	data := fn()
 	cache.store.Add(key, data)
 	return data
+}
+
+func (cache *Cache) Wrap(fn func() interface{}) interface{} {
+	return cache.Cache(getFnName(fn), fn)
 }

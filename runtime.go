@@ -1,6 +1,7 @@
 package funcache
 
 import (
+	"reflect"
 	"runtime"
 )
 
@@ -43,14 +44,18 @@ func wasCalledByCacheBustingFn() bool {
 	return false
 }
 
+func getFnName(fn func() interface{}) string {
+	ptr := reflect.ValueOf(fn).Pointer()
+	return runtime.FuncForPC(ptr).Name()
+}
+
 func init() {
 	nilCache().Bust(func() {
 		cacheBustingFnPc, _, _, _ = runtime.Caller(1)
 	})
 	// Sanity check that we have the right cache busting function
-	frames := runtime.CallersFrames([]uintptr{cacheBustingFnPc})
-	frame, _ := frames.Next()
-	if frame.Function != cacheBustingFn {
+	fn := runtime.FuncForPC(cacheBustingFnPc)
+	if fn.Name() != cacheBustingFn {
 		panic("funcache: init: unable to identify cache busting func")
 	}
 }

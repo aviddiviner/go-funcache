@@ -41,12 +41,40 @@ func TestCaller(t *testing.T) {
 	})
 }
 
+func TestWrapIsDistinct(t *testing.T) {
+	cache := nilCache()
+
+	getValueA := func() (value, caller string) {
+		value = cache.Wrap(func() interface{} {
+			caller = testGetCallingFuncs()[0]
+			return "A"
+		}).(string)
+		return
+	}
+	valueA, callerA := getValueA()
+	assert.Equal(t, "A", valueA)
+
+	valueA, callerA1 := getValueA() // Inner func called again, because nilCache
+	assert.Equal(t, "A", valueA)
+
+	assert.Equal(t, callerA, callerA1)
+
+	var callerB string
+	valueB := cache.Wrap(func() interface{} {
+		callerB = testGetCallingFuncs()[0]
+		return "B"
+	})
+	assert.Equal(t, "B", valueB)
+
+	assert.NotEqual(t, callerA, callerB)
+}
+
 func TestBasics(t *testing.T) {
 	cache := NewInMemCache()
 
 	var callCount int
 	getFoo := func() string {
-		return cache.Wrap("foo", func() interface{} {
+		return cache.Wrap(func() interface{} {
 			callCount += 1
 			return "Foo!"
 		}).(string)
@@ -69,7 +97,7 @@ func TestBasics(t *testing.T) {
 
 func testCacheUse(t *testing.T, cache *Cache, key, val interface{}, bust bool) {
 	var gotBust bool
-	gotVal := cache.Wrap(key, func() interface{} {
+	gotVal := cache.Cache(key, func() interface{} {
 		gotBust = true
 		return val
 	})
