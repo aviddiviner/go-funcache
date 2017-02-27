@@ -5,7 +5,7 @@ import (
 	"runtime"
 )
 
-const cacheBustingFn = "github.com/aviddiviner/funcache.(*Cache).Bust"
+const cacheBustingFn = "github.com/aviddiviner/go-funcache.(*Cache).Bust"
 
 var cacheBustingFnPc uintptr
 

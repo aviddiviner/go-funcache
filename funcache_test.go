@@ -52,7 +52,7 @@ func TestCaller(t *testing.T) {
 	fns := testGetCallingFuncs()
 	var found bool
 	for _, fn := range fns {
-		if fn == "github.com/aviddiviner/funcache.TestCaller" {
+		if fn == "github.com/aviddiviner/go-funcache.TestCaller" {
 			found = true
 		}
 	}
