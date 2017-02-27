@@ -2,7 +2,6 @@
 package funcache
 
 import (
-	"fmt"
 	"sync"
 	"sync/atomic"
 )
@@ -35,27 +34,55 @@ func nilCache() *Cache { return New(&nilStore{}) }
 
 type syncMap struct {
 	sync.RWMutex
-	m map[string]interface{}
-}
-
-func keyFromInterface(key interface{}) string {
-	return fmt.Sprint(key)
+	m map[interface{}]interface{}
 }
 
 func newSyncMap() *syncMap {
-	return &syncMap{m: make(map[string]interface{})}
+	return &syncMap{m: make(map[interface{}]interface{})}
 }
 
 func (sm *syncMap) Add(key, value interface{}) {
 	sm.Lock()
 	defer sm.Unlock()
-	sm.m[keyFromInterface(key)] = value
+	sm.m[key] = value
 }
 
 func (sm *syncMap) Get(key interface{}) (value interface{}, ok bool) {
 	sm.RLock()
 	defer sm.RUnlock()
-	value, ok = sm.m[keyFromInterface(key)]
+	value, ok = sm.m[key]
+	return
+}
+
+// -----------------------------------------------------------------------------
+// Copy-on-write in-memory map, safe for concurrent access.
+
+type cowMap struct {
+	sync.Mutex // Used only when writing
+	m          atomic.Value
+}
+
+func newCopyOnWriteMap() *cowMap {
+	cm := &cowMap{}
+	cm.m.Store(make(map[interface{}]interface{}))
+	return cm
+}
+
+func (cm *cowMap) Add(key, value interface{}) {
+	cm.Lock()
+	defer cm.Unlock()
+	m1 := cm.m.Load().(map[interface{}]interface{})
+	m2 := make(map[interface{}]interface{})
+	for k, v := range m1 {
+		m2[k] = v
+	}
+	m2[key] = value
+	cm.m.Store(m2)
+}
+
+func (cm *cowMap) Get(key interface{}) (value interface{}, ok bool) {
+	m := cm.m.Load().(map[interface{}]interface{})
+	value, ok = m[key]
 	return
 }
 

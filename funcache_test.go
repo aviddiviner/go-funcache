@@ -11,20 +11,20 @@ import (
 
 type noisyTestStore struct {
 	t *testing.T
-	m map[string]interface{}
+	m map[interface{}]interface{}
 }
 
 func noisyTestCache(t *testing.T) *Cache {
-	return New(&noisyTestStore{t: t, m: make(map[string]interface{})})
+	return New(&noisyTestStore{t: t, m: make(map[interface{}]interface{})})
 }
 
 func (ts *noisyTestStore) Add(key, value interface{}) {
-	ts.m[keyFromInterface(key)] = value
+	ts.m[key] = value
 	ts.t.Logf("Add(%v, %v)", key, value)
 }
 
 func (ts *noisyTestStore) Get(key interface{}) (value interface{}, ok bool) {
-	value, ok = ts.m[keyFromInterface(key)]
+	value, ok = ts.m[key]
 	ts.t.Logf("Get(%v) -> (%v, %v)", key, value, ok)
 	return
 }
@@ -228,6 +228,13 @@ func TestCacheNil(t *testing.T) {
 	testCacheUse(t, cache, nil, "Foo!", false)
 }
 
+func TestCacheMixedKeys(t *testing.T) {
+	cache := NewInMemCache()
+
+	testCacheUse(t, cache, "abc", "Foo!", true)
+	testCacheUse(t, cache, 123, "Foo!", true)
+}
+
 func TestDeferredFuncs(t *testing.T) {
 	cache := NewInMemCache()
 
@@ -248,8 +255,17 @@ func BenchmarkUncached(b *testing.B) {
 	}
 }
 
-func BenchmarkCacheHits(b *testing.B) {
+func BenchmarkCacheHitsMem(b *testing.B) {
 	cache := NewInMemCache()
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		cache.Cache("xyz", func() interface{} {
+			return "xyz"
+		})
+	}
+}
+func BenchmarkCacheHitsCow(b *testing.B) {
+	cache := New(newCopyOnWriteMap())
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
 		cache.Cache("xyz", func() interface{} {
@@ -277,9 +293,40 @@ func BenchmarkCacheBusted(b *testing.B) {
 		})
 	}
 }
-
-func BenchmarkWrapHits(b *testing.B) {
+func BenchmarkCacheBustedMem(b *testing.B) {
 	cache := NewInMemCache()
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		cache.Bust(func() {
+			cache.Cache("xyz", func() interface{} {
+				return "xyz"
+			})
+		})
+	}
+}
+func BenchmarkCacheBustedCow(b *testing.B) {
+	cache := New(newCopyOnWriteMap())
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		cache.Bust(func() {
+			cache.Cache("xyz", func() interface{} {
+				return "xyz"
+			})
+		})
+	}
+}
+
+func BenchmarkWrapHitsMem(b *testing.B) {
+	cache := NewInMemCache()
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		cache.Wrap(func() interface{} {
+			return "xyz"
+		})
+	}
+}
+func BenchmarkWrapHitsCow(b *testing.B) {
+	cache := New(newCopyOnWriteMap())
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
 		cache.Wrap(func() interface{} {
