@@ -156,7 +156,7 @@ func testCacheUse(t *testing.T, cache *Cache, key, val interface{}, bust bool) {
 }
 
 func TestNestedCachingAndBusting(t *testing.T) {
-	cache := NewInMemCache()
+	cache := noisyTestCache(t)
 
 	var callCount int
 	getFoo := func() interface{} {
@@ -222,27 +222,58 @@ func TestBackedByAnotherStore(t *testing.T) {
 }
 
 func TestCacheNil(t *testing.T) {
-	cache := NewInMemCache()
+	cache := noisyTestCache(t)
 
 	testCacheUse(t, cache, nil, "Foo!", true)
 	testCacheUse(t, cache, nil, "Foo!", false)
 }
 
 func TestCacheMixedKeys(t *testing.T) {
-	cache := NewInMemCache()
+	cache := noisyTestCache(t)
 
 	testCacheUse(t, cache, "abc", "Foo!", true)
-	testCacheUse(t, cache, 123, "Foo!", true)
+	testCacheUse(t, cache, 123, "123!", true)
+
+	testCacheUse(t, cache, "abc", "Foo!", false)
+	testCacheUse(t, cache, 123, "123!", false)
 }
 
 func TestDeferredFuncs(t *testing.T) {
-	cache := NewInMemCache()
+	cache := noisyTestCache(t)
 
 	testCacheUse(t, cache, "foo", "Foo!", true)
 	defer testCacheUse(t, cache, "foo", "Foo!", false)
 	defer cache.Bust(func() {
 		testCacheUse(t, cache, "foo", "Foo!", true)
 	})
+}
+
+type embeddedTestCache struct{ *Cache }
+
+func TestComposition(t *testing.T) {
+	cache := embeddedTestCache{noisyTestCache(t)}
+
+	var callCount int
+	getFoo := func() interface{} {
+		return cache.Wrap(func() interface{} {
+			callCount += 1
+			return "Foo!"
+		})
+	}
+
+	assert.Equal(t, "Foo!", getFoo())
+	assert.Equal(t, 1, callCount)
+
+	assert.Equal(t, "Foo!", getFoo())
+	assert.Equal(t, 1, callCount)
+
+	cache.Bust(func() {
+		assert.Equal(t, "Foo!", getFoo())
+		assert.Equal(t, 2, callCount)
+	})
+
+	assert.Equal(t, "Foo!", getFoo())
+	assert.Equal(t, 2, callCount)
 }
 
 // -----------------------------------------------------------------------------
@@ -254,6 +285,16 @@ func BenchmarkUncached(b *testing.B) {
 		}()
 	}
 }
+func BenchmarkUncachedPar(b *testing.B) {
+	// b.ReportAllocs()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			func() interface{} {
+				return "xyz"
+			}()
+		}
+	})
+}
 
 func BenchmarkCacheHitsMem(b *testing.B) {
 	cache := NewInMemCache()
@@ -264,6 +305,17 @@ func BenchmarkCacheHitsMem(b *testing.B) {
 		})
 	}
 }
+func BenchmarkCacheHitsMemPar(b *testing.B) {
+	cache := NewInMemCache()
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			cache.Cache("xyz", func() interface{} {
+				return "xyz"
+			})
+		}
+	})
+}
 func BenchmarkCacheHitsCow(b *testing.B) {
 	cache := New(newCopyOnWriteMap())
 	b.ResetTimer()
@@ -273,6 +325,17 @@ func BenchmarkCacheHitsCow(b *testing.B) {
 		})
 	}
 }
+func BenchmarkCacheHitsCowPar(b *testing.B) {
+	cache := New(newCopyOnWriteMap())
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			cache.Cache("xyz", func() interface{} {
+				return "xyz"
+			})
+		}
+	})
+}
 func BenchmarkCacheMisses(b *testing.B) {
 	cache := nilCache()
 	b.ResetTimer()
@@ -281,6 +344,17 @@ func BenchmarkCacheMisses(b *testing.B) {
 			return "xyz"
 		})
 	}
+}
+func BenchmarkCacheMissesPar(b *testing.B) {
+	cache := nilCache()
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			cache.Cache("xyz", func() interface{} {
+				return "xyz"
+			})
+		}
+	})
 }
 func BenchmarkCacheBusted(b *testing.B) {
 	cache := nilCache()
@@ -293,6 +367,19 @@ func BenchmarkCacheBusted(b *testing.B) {
 		})
 	}
 }
+func BenchmarkCacheBustedPar(b *testing.B) {
+	cache := nilCache()
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			cache.Bust(func() {
+				cache.Cache("xyz", func() interface{} {
+					return "xyz"
+				})
+			})
+		}
+	})
+}
 func BenchmarkCacheBustedMem(b *testing.B) {
 	cache := NewInMemCache()
 	b.ResetTimer()
@@ -304,6 +391,19 @@ func BenchmarkCacheBustedMem(b *testing.B) {
 		})
 	}
 }
+func BenchmarkCacheBustedMemPar(b *testing.B) {
+	cache := NewInMemCache()
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			cache.Bust(func() {
+				cache.Cache("xyz", func() interface{} {
+					return "xyz"
+				})
+			})
+		}
+	})
+}
 func BenchmarkCacheBustedCow(b *testing.B) {
 	cache := New(newCopyOnWriteMap())
 	b.ResetTimer()
@@ -314,6 +414,19 @@ func BenchmarkCacheBustedCow(b *testing.B) {
 			})
 		})
 	}
+}
+func BenchmarkCacheBustedCowPar(b *testing.B) {
+	cache := New(newCopyOnWriteMap())
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			cache.Bust(func() {
+				cache.Cache("xyz", func() interface{} {
+					return "xyz"
+				})
+			})
+		}
+	})
 }
 
 func BenchmarkWrapHitsMem(b *testing.B) {
